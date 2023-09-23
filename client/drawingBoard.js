@@ -1,5 +1,7 @@
 // Much of the code here is from IGME 330's canvas exercieses
 
+const { drawingBoardWidth, drawingBoardHeight } = require('../common/drawingBoardDimensions.js');
+
 const lineWidth = 3;
 const lineColor = 'black';
 
@@ -23,9 +25,9 @@ const getMouse = (e) => {
   }
 
   mouse.x = (rawX - drawingBoardOuter.offsetLeft)
-    * (drawingBoard.width / drawingBoardOuter.offsetWidth);
+    * (drawingBoardWidth / drawingBoardOuter.offsetWidth);
   mouse.y = (rawY - drawingBoardOuter.offsetTop)
-    * (drawingBoard.height / drawingBoardOuter.offsetHeight);
+    * (drawingBoardHeight / drawingBoardOuter.offsetHeight);
 
   return mouse;
 };
@@ -55,6 +57,10 @@ const endLine = () => {
 
 const toDataURL = () => drawingBoard.toDataURL();
 
+const getImageArray = () => ctx.getImageData(0, 0, drawingBoardWidth, drawingBoardHeight).data;
+
+const drawImageData = (imageData) => ctx.putImageData(imageData, 0, 0);
+
 // https://www.fabiofranchino.com/log/load-an-image-with-javascript-using-await/
 const loadImage = (url) => new Promise((resolve, reject) => {
   const img = new Image();
@@ -79,7 +85,7 @@ const clear = () => {
   // as the images shouldn't be downloaded as black lines on a transparent background
   ctx.fillStyle = 'white';
   // https://stackoverflow.com/questions/2142535/how-to-clear-the-canvas-for-redrawing
-  ctx.fillRect(0, 0, drawingBoard.width, drawingBoard.height);
+  ctx.fillRect(0, 0, drawingBoardWidth, drawingBoardHeight);
   ctx.fillStyle = prevFillStyle;
 };
 
@@ -117,6 +123,8 @@ const init = () => {
 module.exports = {
   init,
   toDataURL,
+  getImageArray,
+  drawImageData,
   drawImage,
   clear,
 };

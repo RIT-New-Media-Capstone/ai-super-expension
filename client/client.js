@@ -1,8 +1,47 @@
-const gameCode = require('../src/gameCode.js');
+const gameCode = require('../common/gameCode.js');
 const drawingBoard = require('./drawingBoard.js');
+const { clientHeaders, serverHeaders } = require('../common/headers.js');
+const { drawingBoardWidth, drawingBoardHeight } = require('../common/drawingBoardDimensions.js');
 
+const webSocketURL = `ws://${window.location.hostname}:443`;
 let screens = {};
 let els = {};
+let finalScribbleURL;
+let finalExpensionURL;
+
+// Parse header, and relevant data according to header, from buffer from server
+const parseServerBuffer = (bufferWithHeader) => {
+  const arrayWithHeader = new Uint8Array(bufferWithHeader);
+  const header = arrayWithHeader[0];
+  const arrayNoHeader = arrayWithHeader.slice(1);
+  const returnObject = { header };
+  switch (header) {
+    // case clientHeaders.newGame:
+    case serverHeaders.errorMsg:
+    case serverHeaders.newGameCreated:
+      returnObject.string = String.fromCharCode(...arrayNoHeader);
+      break;
+    case serverHeaders.gameStarting:
+      [returnObject.round, returnObject.whoScribbles] = arrayNoHeader;
+      break;
+    case serverHeaders.scribbleDone:
+    case serverHeaders.expensionDone:
+      returnObject.imageData = new ImageData(
+        new Uint8ClampedArray(arrayNoHeader),
+        drawingBoardWidth,
+        drawingBoardHeight,
+      );
+      break;
+    default:
+      break;
+  }
+  return returnObject;
+};
+
+// https://askjavascript.com/how-to-convert-string-to-char-code-in-javascript/
+const stringBufferWithHeader = (header, [...string]) => new Uint8Array(
+  [header, ...string.map((c) => c.charCodeAt(0))],
+).buffer;
 
 // Create an object that whose keys point to corresponding document elements
 const elementDictionary = (propNames, propNameToElementID) => {
@@ -30,17 +69,6 @@ const setScreen = (name) => {
   });
 };
 
-// In the event of a JSON endpoint being called and a JSON not being returned,
-// chances are it's not from the exPENsion game API, i.e. Heroku is experiencing
-// a (hopefully) momentary blip, i.e. the request should be tried again.
-const jsonSafe = async (response) => {
-  try {
-    return await response.json();
-  } catch (e) {
-    return undefined;
-  }
-};
-
 // Have the client download a list of files of given URLs and filenames to download them as
 // https://github.com/robertdiers/js-multi-file-download/blob/master/src/main/resources/static/multidownload.js
 const downloadFiles = (files) => {
@@ -59,77 +87,10 @@ const downloadFiles = (files) => {
   downloadNext(0);
 };
 
-// Wait for the game of the specified code to be in the specified state
-// (game has been started, scribble has been submitted, exPENsion has been submitted)
-// https://stackoverflow.com/questions/45008330/how-can-i-use-fetch-in-while-loop
-const gameHavingState = async (code, state) => {
-  const response = await fetch(`/getGame?code=${code}`, {
-    method: 'get',
-    headers: {
-      Accept: 'application/json',
-    },
-  });
-  const jsonResponse = await jsonSafe(response) || {};
-
-  // If the game is at the desired state, return the game's state and its other info
-  if (jsonResponse && response.status === 200 && jsonResponse.state === state) {
-    return jsonResponse;
-  }
-
-  // Otherwise, try again after one second
-  // https://stackoverflow.com/questions/24928846/get-return-value-from-settimeout
-  return new Promise((resolve) => {
-    setTimeout(() => resolve(gameHavingState(code, state)), 1000);
-  });
-};
-
-const startRound = async (code, round, player1Scribbles, iAmPlayer1) => {
-  // Reset the "done" screen to display the final scribble and not yet be ready for the next round
-  els.finalScribble.classList.remove('finalDrawingActive');
-  els.finalExpension.classList.add('finalDrawingActive');
-  els.finalScribbleOrExpension.checked = true;
-  els.playAgainCheckbox.checked = false;
-
-  // Regardless of whether I do the scribble or not, the "waiting" and "drawing" screen
-  // each have their own message for when the game is in the "waiting for scribble" state
-  els.whyAmIWaiting.innerHTML = 'Waiting for the other player to make a scribble...';
-  els.whatAmIDrawing.innerHTML = 'Make a scribble!';
-  drawingBoard.clear();
-
-  // If Player 1 scribbles and I am Player 1, then I scribble.
-  // If Player 1 *doesn't* scribble (meaning Player 2 scribbles),
-  // and I am *not* Player 1 (meaning I am Player 2), then I scribble.
-  // Otherwise I don't scribble.
-  // I scribble if and only if the player who I am is the player who scribbles.
-  const iScribble = player1Scribbles === iAmPlayer1;
-
-  // Behavior of the "submit drawing" button needs to be declared within the round's function,
-  // because the request URL changes depending on variables scoped to the round's function
-  // (game code, current round, and whether the scribble or the exPENsion is being submitted)
-  els.submitDrawingButton.onclick = async () => {
-    // https://stackoverflow.com/questions/13198131/how-to-save-an-html5-canvas-as-an-image-on-a-server
-    const dataURL = drawingBoard.toDataURL();
-    await fetch(`/submitDrawing?code=${code}&round=${round}&which=${iScribble ? 'scribble' : 'expension'}`, {
-      method: 'post',
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'image/png',
-      },
-      body: dataURL,
-    });
-
-    // If I submitted the scribble, I need to wait for the other player
-    // to submit the exPENsion before proceeding on to the "done" screen
-    if (iScribble) {
-      els.whyAmIWaiting.innerHTML = 'Waiting for the other player to make an exPENsion of your scribble...';
-      setScreen('waiting');
-      await gameHavingState(code, 3);
-    }
-
+const startRound = (code, webSocket, round, playerWhoScribbles, myPlayerNumber) => {
+  const seeResult = () => {
     // Display the round's scribble and exPENsion on the "done" screen,
     // and allow the user to download them both at once
-    const finalScribbleURL = `/getDrawing?code=${code}&round=${round}&which=scribble`;
-    const finalExpensionURL = `/getDrawing?code=${code}&round=${round}&which=expension`;
     els.finalScribble.src = finalScribbleURL;
     els.finalExpension.src = finalExpensionURL;
     els.saveDrawingsButton.onclick = () => {
@@ -140,37 +101,109 @@ const startRound = async (code, round, player1Scribbles, iAmPlayer1) => {
         },
         {
           url: finalExpensionURL,
-          filename: `expensiongame_${code}_round${round+ 1 }_2`,
+          filename: `expensiongame_${code}_round${round + 1}_2`,
         },
       ]);
     };
     setScreen('done');
 
-    // Move to the finalized "done" screen and wait for both players to be ready for the next round
-    const nextRound = await gameHavingState(code, 1);
-    startRound(code, nextRound.round, nextRound.player1Scribbles, iAmPlayer1);
+    // Wait for a message from the server that the next round is starting
+    const gotNextRoundStarting = (nextRoundEvent) => {
+      const nextRoundMessage = parseServerBuffer(nextRoundEvent.data);
+      const nextRoundHeader = nextRoundMessage.header;
+      if (nextRoundHeader === serverHeaders.gameStarting) {
+        webSocket.removeEventListener('message', gotNextRoundStarting);
+        startRound(...[
+          code, webSocket, nextRoundMessage.round,
+          nextRoundMessage.whoScribbles, myPlayerNumber,
+        ]);
+      }
+    };
+    webSocket.addEventListener('message', gotNextRoundStarting);
   };
+
+  // Reset the "done" screen to display the final scribble and not yet be ready for the next round
+  els.finalScribble.classList.remove('finalDrawingActive');
+  els.finalExpension.classList.add('finalDrawingActive');
+  els.finalScribbleOrExpension.checked = true;
+  els.playAgainCheckbox.checked = false;
+
+  // Keep a local record of the scribble/exPENsion data URL's
+  // (if I'm the scribbler I can simply save finalScribbleURL from the canvas when I submit
+  // and then save finalExpensionURL from the server when it's done, and vice-versa if I'm not
+  // the scribbler)
+  finalScribbleURL = undefined;
+  finalExpensionURL = undefined;
+
+  // Regardless of whether I do the scribble or not, the "waiting" and "drawing" screen
+  // each have their own message for when the game is in the "waiting for scribble" state
+  els.whyAmIWaiting.innerHTML = 'Waiting for the other player to make a scribble...';
+  els.whatAmIDrawing.innerHTML = 'Make a scribble!';
+  drawingBoard.clear();
 
   // Update whether or not I am ready to play again when I say so by toggling the checkbox
   els.playAgainCheckbox.onclick = (e) => {
-    fetch(`/readyForNextRound?code=${code}&ready=${e.target.checked ? 'yes' : 'no'}&player=${iAmPlayer1 ? 'player1' : 'player2'}`, {
-      method: 'post',
-      headers: {
-        Accept: 'application/json',
-      },
-    });
+    webSocket.send(new Uint8Array([clientHeaders.updateReady, e.target.checked ? 1 : 0]).buffer);
   };
 
-  setScreen(iScribble ? 'drawing' : 'waiting');
+  // If Player 1 scribbles and I am Player 1, then I scribble.
+  // If Player 1 *doesn't* scribble (meaning Player 2 scribbles),
+  // and I am *not* Player 1 (meaning I am Player 2), then I scribble.
+  // Otherwise I don't scribble.
+  // I scribble if and only if the player who I am is the player who scribbles.
+  const iScribble = playerWhoScribbles === myPlayerNumber;
 
-  // If the other player scribbles, wait for them to submit
-  if (!iScribble) {
-    await gameHavingState(code, 2);
-    // Paste their drawing onto the drawing board so I can make an exPENsion of it
-    await drawingBoard.drawImage(`/getDrawing?code=${code}&round=${round}&which=scribble`);
-    els.whatAmIDrawing.innerHTML = 'It\'s exPENsion time! Turn this scribble into a coherent drawing!';
+  if (iScribble) {
+    // Go to drawing screen, and set submit button to submit the drawing as the scribble
+    // and start the wait for the exPENsion
     setScreen('drawing');
-  } // Otherwise the game state changes when the scribble is submitted
+    els.submitDrawingButton.onclick = () => {
+      finalScribbleURL = drawingBoard.toDataURL();
+      webSocket.send(new Uint8Array([
+        clientHeaders.submitScribble, ...drawingBoard.getImageArray(),
+      ]).buffer);
+      els.whyAmIWaiting.innerHTML = 'Waiting for the other player to make an exPENsion of your scribble...';
+      setScreen('waiting');
+      // Wait for exPENsion, and upon reception write it to the canvas and save it back as
+      // a data URL
+      const gotExpensionDoneResponse = (expensionDoneEvent) => {
+        const expensionDoneMessage = parseServerBuffer(expensionDoneEvent.data);
+        const expensionDoneHeader = expensionDoneMessage.header;
+        if (expensionDoneHeader === serverHeaders.expensionDone) {
+          webSocket.removeEventListener('message', gotExpensionDoneResponse);
+          drawingBoard.drawImageData(expensionDoneMessage.imageData);
+          finalExpensionURL = drawingBoard.toDataURL();
+          seeResult();
+        }
+      };
+      webSocket.addEventListener('message', gotExpensionDoneResponse);
+    };
+  } else {
+    // Go to waiting screen until scribble is received, upon which write it to the canvas to
+    // be drawn over (not before saving it back as a data URL though)
+    setScreen('waiting');
+    const gotScribbleDoneResponse = (scribbleDoneEvent) => {
+      const scribbleDoneMessage = parseServerBuffer(scribbleDoneEvent.data);
+      const scribbleDoneHeader = scribbleDoneMessage.header;
+      if (scribbleDoneHeader === serverHeaders.scribbleDone) {
+        webSocket.removeEventListener('message', gotScribbleDoneResponse);
+        drawingBoard.drawImageData(scribbleDoneMessage.imageData);
+        finalScribbleURL = drawingBoard.toDataURL();
+        // When submitting final exPENsion, no further server messages are needed before
+        // proceeding to the result (until AI is added, that is)
+        els.submitDrawingButton.onclick = () => {
+          finalExpensionURL = drawingBoard.toDataURL();
+          webSocket.send(new Uint8Array([
+            clientHeaders.submitExpension, ...drawingBoard.getImageArray(),
+          ]).buffer);
+          seeResult();
+        };
+        els.whatAmIDrawing.innerHTML = 'It\'s exPENsion time! Turn this scribble into a coherent drawing!';
+        setScreen('drawing');
+      }
+    };
+    webSocket.addEventListener('message', gotScribbleDoneResponse);
+  }
 };
 
 const init = () => {
@@ -211,81 +244,98 @@ const init = () => {
     setScreen('noCanvas');
   }
 
-  const requestNewGame = async () => {
+  const setJoinControlsDisabled = (value) => {
+    els.newGameButton.disabled = value;
+    els.joinGameButton.disabled = value;
+    els.submitJoinCodeButton.disabled = value;
+    els.codeInput.disabled = value;
+  };
+
+  const connectionLost = () => {
+    setJoinControlsDisabled(false);
+    setScreen('start');
+    els.newGameError.innerHTML = 'Connection lost.';
+  };
+
+  const requestNewGame = () => {
     // Avoid asking for more than one new game code at once
-    els.newGameButton.disabled = true;
+    els.newGameError.innerHTML = '';
+    setJoinControlsDisabled(true);
 
-    const response = await fetch('/newGame', {
-      method: 'post',
-      headers: {
-        Accept: 'application/json',
-      },
+    const webSocket = new WebSocket(webSocketURL);
+    webSocket.binaryType = 'arraybuffer';
+    webSocket.addEventListener('open', () => {
+      webSocket.send(new Uint8Array([clientHeaders.newGame]).buffer);
     });
-    const jsonResponse = await jsonSafe(response);
-    // If a JSON is not returned, try again
-    if (!jsonResponse) {
-      requestNewGame();
-      return;
-    }
+    webSocket.addEventListener('close', connectionLost);
 
-    // Game has been successfully created
-    if (response.status === 201) {
-      // Display the game's code
-      const { code } = jsonResponse;
-      els.codeDisplay.innerHTML = code;
-      setScreen('displayCode');
+    const gotGameCode = (gameCodeEvent) => {
+      const gameCodeMessage = parseServerBuffer(gameCodeEvent.data);
+      const { header } = gameCodeMessage;
+      webSocket.removeEventListener('message', gotGameCode);
+      if (header === serverHeaders.errorMsg) {
+        setJoinControlsDisabled(false);
+        els.newGameError.innerHTML = gameCodeMessage.string;
+        webSocket.removeEventListener('close', connectionLost);
+        webSocket.close();
+      } else if (header === serverHeaders.newGameCreated) {
+        const code = gameCodeMessage.string;
+        els.codeDisplay.innerHTML = code;
+        setScreen('displayCode');
 
-      // Wait for the other player to join
-      const { player1Scribbles } = await gameHavingState(code, 1);
-      // Player 1 is the player who started the game for Player 2 to join
-      startRound(code, 0, player1Scribbles, true);
-    } else { // If not, show what went wrong
-      els.newGameError.innerHTML = jsonResponse.message;
-    }
+        const otherPlayerJoined = (gameStartEvent) => {
+          const gameStartMessage = parseServerBuffer(gameStartEvent.data);
+          webSocket.removeEventListener('message', otherPlayerJoined);
 
-    els.newGameButton.disabled = false;
+          startRound(code, webSocket, gameStartMessage.round, gameStartMessage.whoScribbles, 0);
+        };
+        webSocket.addEventListener('message', otherPlayerJoined);
+      }
+    };
+    webSocket.addEventListener('message', gotGameCode);
   };
   els.newGameButton.onclick = requestNewGame;
 
   els.joinGameButton.onclick = () => setScreen('inputCode');
 
   const submitJoinCode = async () => {
+    els.joinError.innerHTML = '';
     // Avoid trying to join more than one game at once (or the same one more than once)
-    els.submitJoinCodeButton.disabled = true;
-    els.codeInput.disabled = true;
+    setJoinControlsDisabled(true);
     // User input is only *displayed* as forced uppercase,
     // so the actual value string needs to be translated a such
     const code = els.codeInput.value.toUpperCase();
     // Validate code client-side before sending, just to ensure the request is "sanitized"
     const codeError = gameCode.validateCode(code);
     if (codeError) {
-      els.submitJoinCodeButton.disabled = false;
-      els.codeInput.disabled = false;
+      setJoinControlsDisabled(false);
       els.joinError.innerHTML = codeError.message;
-      return;
-    }
-    const response = await fetch(`/joinGame?code=${code}`, {
-      method: 'post',
-      headers: {
-        Accept: 'application/json',
-      },
-    });
-    const jsonResponse = await jsonSafe(response);
-    // If a JSON is not returned, try again
-    if (!jsonResponse) {
-      submitJoinCode();
-      return;
-    }
-    // Game joined successfully
-    if (response.status === 200) {
-      // Start the game
-      const { player1Scribbles } = jsonResponse;
-      // Player 2 is the player who joined the game that Player 1 started
-      startRound(code, 0, player1Scribbles, false);
-    } else { // If not, show what went wrong
-      els.submitJoinCodeButton.disabled = false;
-      els.codeInput.disabled = false;
-      els.joinError.innerHTML = jsonResponse.message;
+    } else {
+      const webSocket = new WebSocket(webSocketURL);
+      webSocket.binaryType = 'arraybuffer';
+      webSocket.addEventListener('open', () => {
+        webSocket.send(stringBufferWithHeader(clientHeaders.joinGame, code));
+      });
+      webSocket.addEventListener('close', connectionLost);
+
+      const gotJoinResponse = (joinResponseEvent) => {
+        const joinResponseMessage = parseServerBuffer(joinResponseEvent.data);
+        const { header } = joinResponseMessage;
+        webSocket.removeEventListener('message', gotJoinResponse);
+        if (header === serverHeaders.errorMsg) {
+          setJoinControlsDisabled(false);
+          els.joinError.innerHTML = joinResponseMessage.string;
+          console.log(joinResponseMessage);
+          webSocket.removeEventListener('close', connectionLost);
+          webSocket.close();
+        } else if (header === serverHeaders.gameStarting) {
+          els.codeInput.value = '';
+          startRound(...[
+            code, webSocket, joinResponseMessage.round, joinResponseMessage.whoScribbles, 1,
+          ]);
+        }
+      };
+      webSocket.addEventListener('message', gotJoinResponse);
     }
   };
   els.submitJoinCodeButton.onclick = submitJoinCode;

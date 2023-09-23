@@ -20,10 +20,7 @@ const makeNewCode = (games) => {
 
 const validateCode = (code, games, shouldntBeInProgress) => {
   if (!code) {
-    return {
-      message: 'No game code specified.',
-      id: 'noGameCode',
-    };
+    return 'No game code specified.';
   }
 
   const codeLength = code.length;
@@ -31,32 +28,20 @@ const validateCode = (code, games, shouldntBeInProgress) => {
     const codeChar = code[i];
     // https://www.w3schools.com/jsref/jsref_includes.asp
     if (!validCodeChars.includes(codeChar)) {
-      return {
-        message: 'Invalid game code character(s).',
-        id: 'invalidGameCodeChars',
-      };
+      return 'Invalid game code character(s).';
     }
   }
 
   if (codeLength !== validCodeLength) {
-    return {
-      message: 'Invalid game code length.',
-      id: 'invalidGameCodeLength',
-    };
+    return 'Invalid game code length.';
   }
 
   if (games) {
     if (!games[code]) {
-      return {
-        message: 'No game with this code has been created.',
-        id: 'noGameWithCode',
-      };
+      return `No game with code ${code} has been created.`;
     }
     if (shouldntBeInProgress && games[code].state !== 0) {
-      return {
-        message: 'That game is already in progress.',
-        id: 'gameAlreadyInProgress',
-      };
+      return `The game with code ${code} is already in progress.`;
     }
   }
 
