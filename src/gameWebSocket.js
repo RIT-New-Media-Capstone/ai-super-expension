@@ -5,19 +5,40 @@ const { clientHeaders, serverHeaders } = require('../common/headers.js');
 const games = {};
 const playerInfos = {};
 
+// THIS IS A TEMPORARY DEBUG FEATURE; in the final version,
+// the server will not need to convert the buffer back to floats
+// https://gist.github.com/miguelmota/5b06ae5698877322d0ca
+function toArrayBuffer(buffer) {
+  const ab = new ArrayBuffer(buffer.length);
+  const view = new Uint8Array(ab);
+  for (let i = 0; i < buffer.length; ++i) {
+    view[i] = buffer[i];
+  }
+  return ab;
+}
+
 // Parse header, and relevant data according to header, from buffer from client
 const parseClientBuffer = (bufferWithHeader) => {
   const header = bufferWithHeader[0];
   const buffer = bufferWithHeader.slice(1);
   const returnObject = { header };
+  const view = new DataView(toArrayBuffer(buffer));
   switch (header) {
     // case clientHeaders.newGame:
     case clientHeaders.joinGame:
       returnObject.string = buffer.toString();
       break;
-    case clientHeaders.submitScribble:
-    case clientHeaders.submitExpension:
+    case clientHeaders.submitDrawing:
       returnObject.buffer = buffer;
+      break;
+    case clientHeaders.penDown:
+      console.log(`Pen down at (${view.getFloat64(0)}, ${view.getFloat64(8)})`);
+      break;
+    case clientHeaders.penMove:
+      console.log(`Pen move to (${view.getFloat64(0)}, ${view.getFloat64(8)})`);
+      break;
+    case clientHeaders.penUp:
+      console.log('Pen up');
       break;
     case clientHeaders.updateReady:
       returnObject.bool = buffer[0] > 0;
@@ -94,16 +115,16 @@ const joinGame = (playerId, code) => {
   }
 };
 
-const submitDrawing = (playerId, buffer, isScribble) => {
+const submitDrawing = (playerId, buffer) => {
   const playerInfo = playerInfos[playerId];
   if (playerInfo !== undefined) {
     const game = games[playerInfo.gameCode];
     // Verify that the game is in the appropriate state for the drawing,
     // and that the appropriate player is submitting the drawing
-    if (game.state === isScribble ? 1 : 2
-      && (game.playerWhoScribbles === game.playerIds.indexOf(playerId)) === isScribble) {
+    const shouldBeScribble = game.playerWhoScribbles === game.playerIds.indexOf(playerId);
+    if (game.state === (shouldBeScribble ? 1 : 2)) {
       // Resend the drawing to the other player and update the game state
-      if (isScribble) {
+      if (shouldBeScribble) {
         playerInfos[game.playerIds[game.playerWhoScribbles === 1 ? 0 : 1]].socket.send(
           Buffer.from([serverHeaders.scribbleDone, ...buffer]),
         );
@@ -184,11 +205,8 @@ const startGameWebSockets = () => {
         case clientHeaders.joinGame:
           joinGame(playerId, message.string);
           break;
-        case clientHeaders.submitScribble:
-          submitDrawing(playerId, message.buffer, true);
-          break;
-        case clientHeaders.submitExpension:
-          submitDrawing(playerId, message.buffer, false);
+        case clientHeaders.submitDrawing:
+          submitDrawing(playerId, message.buffer);
           break;
         case clientHeaders.updateReady:
           updateReady(playerId, message.bool);

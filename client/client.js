@@ -1,7 +1,6 @@
 const gameCode = require('../common/gameCode.js');
 const drawingBoard = require('./drawingBoard.js');
 const { clientHeaders, serverHeaders } = require('../common/headers.js');
-const { drawingBoardWidth, drawingBoardHeight } = require('../common/drawingBoardDimensions.js');
 
 const webSocketURL = `ws://${window.location.hostname}:443`;
 let screens = {};
@@ -26,11 +25,7 @@ const parseServerBuffer = (bufferWithHeader) => {
       break;
     case serverHeaders.scribbleDone:
     case serverHeaders.expensionDone:
-      returnObject.imageData = new ImageData(
-        new Uint8ClampedArray(arrayNoHeader),
-        drawingBoardWidth,
-        drawingBoardHeight,
-      );
+      returnObject.imageDataBuffer = arrayNoHeader;
       break;
     default:
       break;
@@ -159,9 +154,7 @@ const startRound = (code, webSocket, round, playerWhoScribbles, myPlayerNumber) 
     setScreen('drawing');
     els.submitDrawingButton.onclick = () => {
       finalScribbleURL = drawingBoard.toDataURL();
-      webSocket.send(new Uint8Array([
-        clientHeaders.submitScribble, ...drawingBoard.getImageArray(),
-      ]).buffer);
+      drawingBoard.submitDrawing();
       els.whyAmIWaiting.innerHTML = 'Waiting for the other player to make an exPENsion of your scribble...';
       setScreen('waiting');
       // Wait for exPENsion, and upon reception write it to the canvas and save it back as
@@ -171,7 +164,7 @@ const startRound = (code, webSocket, round, playerWhoScribbles, myPlayerNumber) 
         const expensionDoneHeader = expensionDoneMessage.header;
         if (expensionDoneHeader === serverHeaders.expensionDone) {
           webSocket.removeEventListener('message', gotExpensionDoneResponse);
-          drawingBoard.drawImageData(expensionDoneMessage.imageData);
+          drawingBoard.drawImageData(expensionDoneMessage.imageDataBuffer);
           finalExpensionURL = drawingBoard.toDataURL();
           seeResult();
         }
@@ -187,15 +180,13 @@ const startRound = (code, webSocket, round, playerWhoScribbles, myPlayerNumber) 
       const scribbleDoneHeader = scribbleDoneMessage.header;
       if (scribbleDoneHeader === serverHeaders.scribbleDone) {
         webSocket.removeEventListener('message', gotScribbleDoneResponse);
-        drawingBoard.drawImageData(scribbleDoneMessage.imageData);
+        drawingBoard.drawImageData(scribbleDoneMessage.imageDataBuffer);
         finalScribbleURL = drawingBoard.toDataURL();
         // When submitting final exPENsion, no further server messages are needed before
         // proceeding to the result (until AI is added, that is)
         els.submitDrawingButton.onclick = () => {
           finalExpensionURL = drawingBoard.toDataURL();
-          webSocket.send(new Uint8Array([
-            clientHeaders.submitExpension, ...drawingBoard.getImageArray(),
-          ]).buffer);
+          drawingBoard.submitDrawing();
           seeResult();
         };
         els.whatAmIDrawing.innerHTML = 'It\'s exPENsion time! Turn this scribble into a coherent drawing!';
@@ -268,6 +259,7 @@ const init = () => {
       webSocket.send(new Uint8Array([clientHeaders.newGame]).buffer);
     });
     webSocket.addEventListener('close', connectionLost);
+    drawingBoard.setSocket(webSocket);
 
     const gotGameCode = (gameCodeEvent) => {
       const gameCodeMessage = parseServerBuffer(gameCodeEvent.data);
@@ -298,7 +290,7 @@ const init = () => {
 
   els.joinGameButton.onclick = () => setScreen('inputCode');
 
-  const submitJoinCode = async () => {
+  const submitJoinCode = () => {
     els.joinError.innerHTML = '';
     // Avoid trying to join more than one game at once (or the same one more than once)
     setJoinControlsDisabled(true);
@@ -317,6 +309,7 @@ const init = () => {
         webSocket.send(stringBufferWithHeader(clientHeaders.joinGame, code));
       });
       webSocket.addEventListener('close', connectionLost);
+      drawingBoard.setSocket(webSocket);
 
       const gotJoinResponse = (joinResponseEvent) => {
         const joinResponseMessage = parseServerBuffer(joinResponseEvent.data);
@@ -325,7 +318,6 @@ const init = () => {
         if (header === serverHeaders.errorMsg) {
           setJoinControlsDisabled(false);
           els.joinError.innerHTML = joinResponseMessage.string;
-          console.log(joinResponseMessage);
           webSocket.removeEventListener('close', connectionLost);
           webSocket.close();
         } else if (header === serverHeaders.gameStarting) {
