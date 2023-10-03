@@ -1,6 +1,8 @@
 const gameCode = require('../common/gameCode.js');
 const drawingBoard = require('./drawingBoard.js');
+const streamingBoard = require('./streamingBoard.js');
 const { clientHeaders, serverHeaders } = require('../common/headers.js');
+const { otherOfTwoPlayers } = require('../common/commonMisc.js');
 
 const webSocketURL = `ws://${window.location.hostname}:443`;
 let screens = {};
@@ -10,25 +12,35 @@ let finalExpensionURL;
 
 // Parse header, and relevant data according to header, from buffer from server
 const parseServerBuffer = (bufferWithHeader) => {
-  const arrayWithHeader = new Uint8Array(bufferWithHeader);
-  const header = arrayWithHeader[0];
-  const arrayNoHeader = arrayWithHeader.slice(1);
+  const bufferWithHeaderView = new DataView(bufferWithHeader);
+  const header = bufferWithHeaderView.getUint8(0);
   const returnObject = { header };
   switch (header) {
     // case clientHeaders.newGame:
     case serverHeaders.errorMsg:
     case serverHeaders.newGameCreated:
-      returnObject.string = String.fromCharCode(...arrayNoHeader);
+      returnObject.string = String.fromCharCode(...new Uint8Array(bufferWithHeader).slice(1));
       break;
     case serverHeaders.gameStarting:
-      [returnObject.round, returnObject.whoScribbles] = arrayNoHeader;
+      returnObject.round = bufferWithHeaderView.getUint8(1);
+      returnObject.whoScribbles = bufferWithHeaderView.getUint8(2);
       break;
-    case serverHeaders.scribbleDone:
-    case serverHeaders.expensionDone:
-      returnObject.imageDataBuffer = arrayNoHeader;
+    case serverHeaders.penDown:
+    case serverHeaders.penMove:
+      returnObject.player = bufferWithHeaderView.getUint8(1);
+      returnObject.mouse = {
+        x: bufferWithHeaderView.getFloat64(2),
+        y: bufferWithHeaderView.getFloat64(10),
+      };
+      break;
+    case serverHeaders.penUp:
+      returnObject.player = bufferWithHeaderView.getUint8(1);
+      break;
+    case serverHeaders.drawingDone:
+      returnObject.player = bufferWithHeaderView.getUint8(1);
+      returnObject.imageDataBuffer = bufferWithHeader.slice(2);
       break;
     default:
-      break;
   }
   return returnObject;
 };
@@ -83,6 +95,7 @@ const downloadFiles = (files) => {
 };
 
 const startRound = (code, webSocket, round, playerWhoScribbles, myPlayerNumber) => {
+  const playerWhoMakesExpension = otherOfTwoPlayers(playerWhoScribbles);
   const seeResult = () => {
     // Display the round's scribble and exPENsion on the "done" screen,
     // and allow the user to download them both at once
@@ -134,6 +147,7 @@ const startRound = (code, webSocket, round, playerWhoScribbles, myPlayerNumber) 
   // each have their own message for when the game is in the "waiting for scribble" state
   els.whyAmIWaiting.innerHTML = 'Waiting for the other player to make a scribble...';
   els.whatAmIDrawing.innerHTML = 'Make a scribble!';
+  streamingBoard.clear();
   drawingBoard.clear();
 
   // Update whether or not I am ready to play again when I say so by toggling the checkbox
@@ -154,19 +168,34 @@ const startRound = (code, webSocket, round, playerWhoScribbles, myPlayerNumber) 
     setScreen('drawing');
     els.submitDrawingButton.onclick = () => {
       finalScribbleURL = drawingBoard.toDataURL();
+      streamingBoard.drawImageDataBuffer(drawingBoard.getImageDataBuffer());
       drawingBoard.submitDrawing();
       els.whyAmIWaiting.innerHTML = 'Waiting for the other player to make an exPENsion of your scribble...';
       setScreen('waiting');
       // Wait for exPENsion, and upon reception write it to the canvas and save it back as
       // a data URL
       const gotExpensionDoneResponse = (expensionDoneEvent) => {
-        const expensionDoneMessage = parseServerBuffer(expensionDoneEvent.data);
-        const expensionDoneHeader = expensionDoneMessage.header;
-        if (expensionDoneHeader === serverHeaders.expensionDone) {
-          webSocket.removeEventListener('message', gotExpensionDoneResponse);
-          drawingBoard.drawImageData(expensionDoneMessage.imageDataBuffer);
-          finalExpensionURL = drawingBoard.toDataURL();
-          seeResult();
+        const drawingDoneMessage = parseServerBuffer(expensionDoneEvent.data);
+        if (drawingDoneMessage.player === playerWhoMakesExpension) {
+          // TODO: DRY here
+          switch (drawingDoneMessage.header) {
+            case serverHeaders.penDown:
+              streamingBoard.startLine(drawingDoneMessage.mouse);
+              break;
+            case serverHeaders.penMove:
+              streamingBoard.moveLine(drawingDoneMessage.mouse);
+              break;
+            case serverHeaders.penUp:
+              streamingBoard.endLine();
+              break;
+            case serverHeaders.drawingDone:
+              webSocket.removeEventListener('message', gotExpensionDoneResponse);
+              streamingBoard.drawImageDataBuffer(drawingDoneMessage.imageDataBuffer);
+              finalExpensionURL = streamingBoard.toDataURL();
+              seeResult();
+              break;
+            default:
+          }
         }
       };
       webSocket.addEventListener('message', gotExpensionDoneResponse);
@@ -176,21 +205,34 @@ const startRound = (code, webSocket, round, playerWhoScribbles, myPlayerNumber) 
     // be drawn over (not before saving it back as a data URL though)
     setScreen('waiting');
     const gotScribbleDoneResponse = (scribbleDoneEvent) => {
-      const scribbleDoneMessage = parseServerBuffer(scribbleDoneEvent.data);
-      const scribbleDoneHeader = scribbleDoneMessage.header;
-      if (scribbleDoneHeader === serverHeaders.scribbleDone) {
-        webSocket.removeEventListener('message', gotScribbleDoneResponse);
-        drawingBoard.drawImageData(scribbleDoneMessage.imageDataBuffer);
-        finalScribbleURL = drawingBoard.toDataURL();
-        // When submitting final exPENsion, no further server messages are needed before
-        // proceeding to the result (until AI is added, that is)
-        els.submitDrawingButton.onclick = () => {
-          finalExpensionURL = drawingBoard.toDataURL();
-          drawingBoard.submitDrawing();
-          seeResult();
-        };
-        els.whatAmIDrawing.innerHTML = 'It\'s exPENsion time! Turn this scribble into a coherent drawing!';
-        setScreen('drawing');
+      const drawingDoneMessage = parseServerBuffer(scribbleDoneEvent.data);
+      if (drawingDoneMessage.player === playerWhoScribbles) {
+        switch (drawingDoneMessage.header) {
+          case serverHeaders.penDown:
+            streamingBoard.startLine(drawingDoneMessage.mouse);
+            break;
+          case serverHeaders.penMove:
+            streamingBoard.moveLine(drawingDoneMessage.mouse);
+            break;
+          case serverHeaders.penUp:
+            streamingBoard.endLine();
+            break;
+          case serverHeaders.drawingDone:
+            webSocket.removeEventListener('message', gotScribbleDoneResponse);
+            drawingBoard.drawImageDataBuffer(drawingDoneMessage.imageDataBuffer);
+            finalScribbleURL = drawingBoard.toDataURL();
+            // When submitting final exPENsion, no further server messages are needed before
+            // proceeding to the result (until AI is added, that is)
+            els.submitDrawingButton.onclick = () => {
+              finalExpensionURL = drawingBoard.toDataURL();
+              drawingBoard.submitDrawing();
+              seeResult();
+            };
+            els.whatAmIDrawing.innerHTML = 'It\'s exPENsion time! Turn this scribble into a coherent drawing!';
+            setScreen('drawing');
+            break;
+          default:
+        }
       }
     };
     webSocket.addEventListener('message', gotScribbleDoneResponse);
@@ -231,7 +273,7 @@ const init = () => {
   // setScreen('drawing'); // Uncomment this line to debug a specific screen
 
   // Don't bother starting the game if canvas is not supported (see module for further explanation)
-  if (!drawingBoard.init()) {
+  if (!(drawingBoard.init() && streamingBoard.init())) {
     setScreen('noCanvas');
   }
 

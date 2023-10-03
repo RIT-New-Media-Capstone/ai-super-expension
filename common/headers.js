@@ -18,11 +18,12 @@ const serverHeaders = {
   errorMsg: 0,
   newGameCreated: 1,
   gameStarting: 2,
-  // TODO: Merge into drawingDone
-  scribbleDone: 3,
-  expensionDone: 4,
+  drawingDone: 3,
   // PEN ACTIONS FROM SERVER:
-  // 1x player number at the end
+  // 1x player number between header and XY floats
+  penDown: 4,
+  penMove: 5,
+  penUp: 6,
 };
 
 module.exports = { clientHeaders, serverHeaders };

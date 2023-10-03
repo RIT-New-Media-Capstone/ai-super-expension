@@ -9,13 +9,15 @@ const { clientHeaders } = require('../common/headers.js');
 const {
   boardHeight,
   boardWidth,
+  browserDoesntSupportCanvas,
+  initCtxLineProps,
   endLine,
   moveLine,
   startLine,
+  getImageDataBuffer,
+  drawImageDataBuffer,
+  clear,
 } = require('../common/boardCommon.js');
-
-const lineWidth = 3;
-const lineColor = 'black';
 
 let drawingBoard;
 let drawingBoardOuter;
@@ -84,29 +86,17 @@ const endLineDB = () => {
 
 const toDataURL = () => drawingBoard.toDataURL();
 
-const drawImageDataBuffer = (imageDataBuffer) => {
-  ctx.putImageData(new ImageData(
-    new Uint8ClampedArray(imageDataBuffer),
-    boardWidth,
-    boardHeight,
-  ), 0, 0);
-};
+const getImageDataBufferDB = () => getImageDataBuffer(ctx);
+
+const drawImageDataBufferDB = (imageDataBuffer) => drawImageDataBuffer(ctx, imageDataBuffer);
 
 const submitDrawing = () => {
   socket.send(new Uint8Array([
-    clientHeaders.submitDrawing, ...ctx.getImageData(0, 0, boardWidth, boardHeight).data,
+    clientHeaders.submitDrawing, ...getImageDataBufferDB(),
   ]).buffer);
 };
 
-const clear = () => {
-  const prevFillStyle = ctx.fillStyle;
-  // The board should be cleared with the color white instead of transparency,
-  // as the images shouldn't be downloaded as black lines on a transparent background
-  ctx.fillStyle = 'white';
-  // https://stackoverflow.com/questions/2142535/how-to-clear-the-canvas-for-redrawing
-  ctx.fillRect(0, 0, boardWidth, boardHeight);
-  ctx.fillStyle = prevFillStyle;
-};
+const clearDB = () => clear(ctx);
 
 const setSocket = (newSocket) => {
   socket = newSocket;
@@ -115,12 +105,7 @@ const setSocket = (newSocket) => {
 const init = () => {
   drawingBoard = document.querySelector('#drawingBoard');
   drawingBoardOuter = document.querySelector('#drawingBoardOuter');
-  // Some (really old) browsers don't support Canvas's toDataUrl behavior or even
-  // Canvas itself for that matter, and both are vital to the game, so the game
-  // shouldn't even bother starting on the off chance that the user has an unsupportive browser
-  // https://caniuse.com/?search=canvas
-  // https://stackoverflow.com/questions/2745432/best-way-to-detect-that-html5-canvas-is-not-supported
-  if (!(drawingBoard.getContext && drawingBoard.getContext('2d') && drawingBoard.toDataURL && drawingBoard.toDataURL())) {
+  if (browserDoesntSupportCanvas(drawingBoard)) {
     return false;
   }
   ctx = drawingBoard.getContext('2d');
@@ -135,10 +120,7 @@ const init = () => {
   drawingBoardOuter.ontouchmove = moveLineDB;
   drawingBoardOuter.ontouchcancel = endLineDB;
 
-  ctx.lineWidth = lineWidth;
-  ctx.strokeStyle = lineColor;
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
+  initCtxLineProps(ctx);
 
   return true;
 };
@@ -146,8 +128,9 @@ const init = () => {
 module.exports = {
   init,
   toDataURL,
-  drawImageData: drawImageDataBuffer,
+  getImageDataBuffer: getImageDataBufferDB,
+  drawImageDataBuffer: drawImageDataBufferDB,
   submitDrawing,
-  clear,
+  clear: clearDB,
   setSocket,
 };

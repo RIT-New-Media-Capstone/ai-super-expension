@@ -1,50 +1,34 @@
 const { WebSocketServer } = require('ws');
 const gameCode = require('../common/gameCode.js');
 const { clientHeaders, serverHeaders } = require('../common/headers.js');
+const { otherOfTwoPlayers } = require('../common/commonMisc.js');
 
 const games = {};
 const playerInfos = {};
 
-// THIS IS A TEMPORARY DEBUG FEATURE; in the final version,
-// the server will not need to convert the buffer back to floats
-// https://gist.github.com/miguelmota/5b06ae5698877322d0ca
-function toArrayBuffer(buffer) {
-  const ab = new ArrayBuffer(buffer.length);
-  const view = new Uint8Array(ab);
-  for (let i = 0; i < buffer.length; ++i) {
-    view[i] = buffer[i];
-  }
-  return ab;
-}
-
+// TODO: Sanitize input (What if a buffer has length <= 1? What if a provided game code is invalid?)
 // Parse header, and relevant data according to header, from buffer from client
 const parseClientBuffer = (bufferWithHeader) => {
   const header = bufferWithHeader[0];
   const buffer = bufferWithHeader.slice(1);
   const returnObject = { header };
-  const view = new DataView(toArrayBuffer(buffer));
   switch (header) {
     // case clientHeaders.newGame:
     case clientHeaders.joinGame:
       returnObject.string = buffer.toString();
       break;
+    case clientHeaders.penDown:
+    case clientHeaders.penMove:
+      returnObject.xy = buffer;
+      break;
+      // case clientHeaders.penUp:
     case clientHeaders.submitDrawing:
       returnObject.buffer = buffer;
-      break;
-    case clientHeaders.penDown:
-      console.log(`Pen down at (${view.getFloat64(0)}, ${view.getFloat64(8)})`);
-      break;
-    case clientHeaders.penMove:
-      console.log(`Pen move to (${view.getFloat64(0)}, ${view.getFloat64(8)})`);
-      break;
-    case clientHeaders.penUp:
-      console.log('Pen up');
       break;
     case clientHeaders.updateReady:
       returnObject.bool = buffer[0] > 0;
       break;
     default:
-      break;
   }
   return returnObject;
 };
@@ -115,23 +99,36 @@ const joinGame = (playerId, code) => {
   }
 };
 
+const penXY = (playerId, header, xy) => {
+  const playerInfo = playerInfos[playerId];
+  if (playerInfo !== undefined) {
+    const { playerIds } = games[playerInfo.gameCode];
+    const playerNumber = playerIds.indexOf(playerId);
+    playerInfos[playerIds[otherOfTwoPlayers(playerIds.indexOf(playerId))]].socket.send(
+      Buffer.from([header, playerNumber, ...xy]),
+    );
+  }
+};
+
 const submitDrawing = (playerId, buffer) => {
   const playerInfo = playerInfos[playerId];
   if (playerInfo !== undefined) {
     const game = games[playerInfo.gameCode];
     // Verify that the game is in the appropriate state for the drawing,
     // and that the appropriate player is submitting the drawing
+    const { playerWhoScribbles } = game;
+    const playerWhoMakesExpension = otherOfTwoPlayers(playerWhoScribbles);
     const shouldBeScribble = game.playerWhoScribbles === game.playerIds.indexOf(playerId);
     if (game.state === (shouldBeScribble ? 1 : 2)) {
       // Resend the drawing to the other player and update the game state
       if (shouldBeScribble) {
-        playerInfos[game.playerIds[game.playerWhoScribbles === 1 ? 0 : 1]].socket.send(
-          Buffer.from([serverHeaders.scribbleDone, ...buffer]),
+        playerInfos[game.playerIds[playerWhoMakesExpension]].socket.send(
+          Buffer.from([serverHeaders.drawingDone, playerWhoScribbles, ...buffer]),
         );
         game.state = 2;
       } else {
-        playerInfos[game.playerIds[game.playerWhoScribbles]].socket.send(
-          Buffer.from([serverHeaders.expensionDone, ...buffer]),
+        playerInfos[game.playerIds[playerWhoScribbles]].socket.send(
+          Buffer.from([serverHeaders.drawingDone, playerWhoMakesExpension, ...buffer]),
         );
         game.state = 3;
       }
@@ -205,6 +202,15 @@ const startGameWebSockets = () => {
         case clientHeaders.joinGame:
           joinGame(playerId, message.string);
           break;
+        case clientHeaders.penDown:
+          penXY(playerId, serverHeaders.penDown, message.xy);
+          break;
+        case clientHeaders.penMove:
+          penXY(playerId, serverHeaders.penMove, message.xy);
+          break;
+        case clientHeaders.penUp:
+          penXY(playerId, serverHeaders.penUp, []);
+          break;
         case clientHeaders.submitDrawing:
           submitDrawing(playerId, message.buffer);
           break;
@@ -212,7 +218,6 @@ const startGameWebSockets = () => {
           updateReady(playerId, message.bool);
           break;
         default:
-          break;
       }
     });
   });

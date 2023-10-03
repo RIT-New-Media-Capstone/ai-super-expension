@@ -64,14 +64,14 @@ body {
   height: 100%;
 }
 
-#drawingBoardOuter, #finalDrawingOuter {
+#drawingBoardOuter, #streamingBoardOuter, #finalDrawingOuter {
   max-width: 640px;
   max-height: 100vh;
   background: white;
   margin-block-end: 1rem;
 }
 
-#drawingBoard, #finalScribble, #finalExpension {
+#drawingBoard, #streamingBoard, #finalScribble, #finalExpension {
   user-select: none;
   width: inherit;
   height: inherit;
