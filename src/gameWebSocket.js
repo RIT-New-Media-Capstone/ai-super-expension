@@ -2,6 +2,7 @@ const { WebSocketServer } = require('ws');
 const gameCode = require('../common/gameCode.js');
 const { clientHeaders, serverHeaders } = require('../common/headers.js');
 const { otherOfTwoPlayers } = require('../common/commonMisc.js');
+const imageGen = require('./imageGen.js');
 
 const games = {};
 const playerInfos = {};
@@ -21,7 +22,7 @@ const parseClientBuffer = (bufferWithHeader) => {
     case clientHeaders.penMove:
       returnObject.xy = buffer;
       break;
-      // case clientHeaders.penUp:
+    // case clientHeaders.penUp:
     case clientHeaders.submitDrawing:
       returnObject.buffer = buffer;
       break;
@@ -133,6 +134,10 @@ const submitDrawing = (playerId, buffer) => {
         game.state = 3;
       }
     }
+    // else if(game.state === 3) {
+    //   // Send the image to the ai to change it
+    //   imageGen.getImageVariation();
+    // }
   }
 };
 
