@@ -27,7 +27,7 @@ const testImageGen = async () => {
 const getImageVariation = async (image) => {
     console.log('image variation');
     try {
-        const generatedImage = await openai.createImageVariation({
+        const generatedImage = await openai.createVariation({
             image,
             n: 1,
             size: "256x256",
