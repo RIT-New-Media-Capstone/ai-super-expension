@@ -1,6 +1,7 @@
 const { WebSocketServer } = require('ws');
 const gameCode = require('../common/gameCode.js');
 const { clientHeaders, serverHeaders } = require('../common/headers.js');
+const { gameStates } = require('../common/gameStates.js');
 const { otherOfTwoPlayers } = require('../common/commonMisc.js');
 const imageGen = require('./imageGen.js');
 
@@ -50,7 +51,7 @@ const newGame = (playerId) => {
       playerInfo.readyForNextRound = false;
 
       games[newCode] = {
-        state: 0,
+        state: gameStates.waitingForOtherPlayer,
         playerIds: [
           playerId,
         ],
@@ -60,12 +61,6 @@ const newGame = (playerId) => {
       socket.send(stringBufferWithHeader(serverHeaders.newGameCreated, newCode));
     }
   }
-  // GAME STATES
-  // 0: Waiting for other player to join
-  // 1: Waiting for scribble
-  // 2: Waiting for exPENsion
-  // 3: Waiting for both players' approval to start next round
-  // THIS WILL BE DIFFERENT IN THE AI GAMEMODE
 };
 
 const joinGame = (playerId, code) => {
@@ -87,7 +82,8 @@ const joinGame = (playerId, code) => {
         gamePlayerIds.push(playerId);
         const playerWhoScribbles = Math.floor(Math.random() * 2);
         game.playerWhoScribbles = playerWhoScribbles;
-        game.state = 1;
+
+        game.state = gameStates.waitingForScribble;
 
         // Send both players the "game is starting" message
         for (let i = 0; i < gamePlayerIds.length; i++) {
@@ -111,7 +107,7 @@ const penXY = (playerId, header, xy) => {
   }
 };
 
-const submitDrawing = (playerId, buffer) => {
+const submitDrawing = async (playerId, buffer) => {
   const playerInfo = playerInfos[playerId];
   if (playerInfo !== undefined) {
     const game = games[playerInfo.gameCode];
@@ -120,24 +116,33 @@ const submitDrawing = (playerId, buffer) => {
     const { playerWhoScribbles } = game;
     const playerWhoMakesExpension = otherOfTwoPlayers(playerWhoScribbles);
     const shouldBeScribble = game.playerWhoScribbles === game.playerIds.indexOf(playerId);
-    if (game.state === (shouldBeScribble ? 1 : 2)) {
+    if (game.state === (shouldBeScribble ? gameStates.waitingForScribble : gameStates.waitingForExpension)) {
       // Resend the drawing to the other player and update the game state
       if (shouldBeScribble) {
         playerInfos[game.playerIds[playerWhoMakesExpension]].socket.send(
           Buffer.from([serverHeaders.drawingDone, playerWhoScribbles, ...buffer]),
         );
-        game.state = 2;
+        game.state = gameStates.waitingForExpension;
       } else {
         playerInfos[game.playerIds[playerWhoScribbles]].socket.send(
           Buffer.from([serverHeaders.drawingDone, playerWhoMakesExpension, ...buffer]),
         );
-        game.state = 3;
+        game.state = gameStates.waitingForNextRound;
+
+        // game.state = gameStates.waitingForAiImageVariation;
+
+        // turn this from raw rgba data into a png
+        // buffer
+
+        // send png to ai for variation
+        // const newImage = await imageGen.getImageVariation();
+
+        // send back to both players in the form of raw rgba data buffer
+
+        // set game state to 4
+        // game.state = gameStates.waitingForNextRound;
       }
     }
-    // else if(game.state === 3) {
-    //   // Send the image to the ai to change it
-    //   imageGen.getImageVariation();
-    // }
   }
 };
 
@@ -146,7 +151,7 @@ const updateReady = (playerId, value) => {
   if (playerInfo !== undefined) {
     const game = games[playerInfo.gameCode];
     // Only accept "ready for next round" when appropriate
-    if (game.state === 3) {
+    if (game.state === gameStates.waitingForNextRound) {
       playerInfo.readyForNextRound = value;
       const gamePlayerIds = game.playerIds;
 
@@ -163,7 +168,7 @@ const updateReady = (playerId, value) => {
         const playerWhoScribbles = Math.floor(Math.random() * 2);
         game.playerWhoScribbles = playerWhoScribbles;
         game.round++;
-        game.state = 1;
+        game.state = gameStates.waitingForScribble;
         for (let i = 0; i < gamePlayerIds.length; i++) {
           const currentPlayerInfo = playerInfos[gamePlayerIds[i]];
           currentPlayerInfo.readyForNextRound = false;
