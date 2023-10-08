@@ -4,6 +4,7 @@ const { clientHeaders, serverHeaders } = require('../common/headers.js');
 const { gameStates } = require('../common/gameStates.js');
 const { otherOfTwoPlayers } = require('../common/commonMisc.js');
 const imageGen = require('./imageGen.js');
+const Jimp = require('jimp')
 
 const games = {};
 const playerInfos = {};
@@ -127,20 +128,47 @@ const submitDrawing = async (playerId, buffer) => {
         playerInfos[game.playerIds[playerWhoScribbles]].socket.send(
           Buffer.from([serverHeaders.drawingDone, playerWhoMakesExpension, ...buffer]),
         );
-        game.state = gameStates.waitingForNextRound;
+        // game.state = gameStates.waitingForNextRound;
 
-        // game.state = gameStates.waitingForAiImageVariation;
+        game.state = gameStates.waitingForAiImageVariation;
 
         // turn this from raw rgba data into a png
         // buffer
 
-        // send png to ai for variation
-        // const newImage = await imageGen.getImageVariation();
+        console.log('creating png', buffer);
+        const originalImage = await new Jimp({ data: buffer, width: 640, height: 480 }, (err, image) => {
+          if (err) {
+            console.log(err);
+            throw err;
+          }
 
-        // send back to both players in the form of raw rgba data buffer
+          // image.resize(256, 256).write('expension.png');
+        });
+
+        const imageBuffer = await originalImage.resize(256, 256).getBufferAsync(Jimp.MIME_PNG);
+        imageBuffer.name = "expension.png";
+
+        // const b64_json = {
+        //   data: [
+        //     {
+        //       b64_json: b64_image.split(',')[1],
+        //     }
+        //   ]
+        // };
+        // console.log(b64_json);
+        // const result = await imageGen.testImageGen();
+
+        console.log('created buffer', imageBuffer);
+
+        // send png to ai for variation
+        const newImage = await imageGen.getImageVariation(imageBuffer);
+        console.log(newImage.data[0].url);
+
+        // send back to both players in the form of a url
+        playerInfos[game.playerIds[playerWhoScribbles]].socket.send(newImage.data[0].url);
 
         // set game state to 4
-        // game.state = gameStates.waitingForNextRound;
+        game.state = gameStates.waitingForNextRound;
       }
     }
   }

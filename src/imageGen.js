@@ -3,7 +3,7 @@ const { Configuration, OpenAIApi } = require("openai");
 // we can consider adding a .env file to hide this information
 const configuration = new Configuration({
     organization: "org-APEBRoYbr5vU8yeKy1kiZFzx",
-    apiKey: "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",
+    apiKey: "",
 });
 const openai = new OpenAIApi(configuration);
 
@@ -14,6 +14,7 @@ const testImageGen = async () => {
             prompt: "A drawing of a beautiful landscape",
             n: 1,
             size: "256x256",
+            response_format: 'b64_json',
             //user: null
         });
         console.log(generatedImage.data);
@@ -27,13 +28,13 @@ const testImageGen = async () => {
 const getImageVariation = async (image) => {
     console.log('image variation');
     try {
-        const generatedImage = await openai.createVariation({
+        const generatedImage = await openai.createImageVariation(
             image,
-            n: 1,
-            size: "256x256",
-            response_format: 'url', // 'b64_json'
+            1,
+            "256x256",
+            'url', // 'b64_json'
             //user: null
-        });
+        );
         console.log(generatedImage.data);
         return generatedImage.data;
     } catch (err) {
