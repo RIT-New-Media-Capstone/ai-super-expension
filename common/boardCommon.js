@@ -1,5 +1,5 @@
-const boardWidth = 640;
-const boardHeight = 480;
+const boardWidth = 512;
+const boardHeight = 512;
 
 const moveLine = (ctx, { x, y }) => {
   ctx.lineTo(x, y);

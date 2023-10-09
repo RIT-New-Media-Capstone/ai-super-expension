@@ -4,11 +4,14 @@ const streamingBoard = require('./streamingBoard.js');
 const { clientHeaders, serverHeaders } = require('../common/headers.js');
 const { otherOfTwoPlayers } = require('../common/commonMisc.js');
 
+// TODO: Interpret server errors better
+
 const webSocketURL = `ws://${window.location.hostname}:443`;
 let screens = {};
 let els = {};
 let finalScribbleURL;
 let finalExpensionURL;
+let finalAiSuperExpensionURL;
 
 // Parse header, and relevant data according to header, from buffer from server
 const parseServerBuffer = (bufferWithHeader) => {
@@ -19,6 +22,7 @@ const parseServerBuffer = (bufferWithHeader) => {
     // case clientHeaders.newGame:
     case serverHeaders.errorMsg:
     case serverHeaders.newGameCreated:
+    case serverHeaders.aiGenerationDone:
       returnObject.string = String.fromCharCode(...new Uint8Array(bufferWithHeader).slice(1));
       break;
     case serverHeaders.gameStarting:
@@ -78,13 +82,14 @@ const setScreen = (name) => {
 
 // Have the client download a list of files of given URLs and filenames to download them as
 // https://github.com/robertdiers/js-multi-file-download/blob/master/src/main/resources/static/multidownload.js
+// https://stackoverflow.com/questions/1066452/easiest-way-to-open-a-download-window-without-navigating-away-from-the-page
 const downloadFiles = (files) => {
   const downloadNext = (i) => {
     if (i >= files.length) return;
     const file = files[i];
     const a = document.createElement('a');
     a.href = file.url;
-    a.target = '_parent';
+    a.target = '_blank';
     if ('download' in a) a.download = file.filename;
     (document.body || document.documentElement).appendChild(a);
     a.click();
@@ -96,44 +101,62 @@ const downloadFiles = (files) => {
 
 const startRound = (code, webSocket, round, playerWhoScribbles, myPlayerNumber) => {
   const playerWhoMakesExpension = otherOfTwoPlayers(playerWhoScribbles);
-  const seeResult = () => {
-    // Display the round's scribble and exPENsion on the "done" screen,
-    // and allow the user to download them both at once
-    els.finalScribble.src = finalScribbleURL;
-    els.finalExpension.src = finalExpensionURL;
-    els.saveDrawingsButton.onclick = () => {
-      downloadFiles([
-        {
-          url: finalScribbleURL,
-          filename: `expensiongame_${code}_round${round + 1}_1`,
-        },
-        {
-          url: finalExpensionURL,
-          filename: `expensiongame_${code}_round${round + 1}_2`,
-        },
-      ]);
-    };
-    setScreen('done');
+  const waitForAi = () => {
+    setScreen('waitingForAi');
+    const gotAiSuperExpension = (aiSuperExpensionEvent) => {
+      const aiSuperExpensionMessage = parseServerBuffer(aiSuperExpensionEvent.data);
+      const aiSuperExpensionHeader = aiSuperExpensionMessage.header;
+      if (aiSuperExpensionHeader === serverHeaders.aiGenerationDone) {
+        webSocket.removeEventListener('message', gotAiSuperExpension);
+        finalAiSuperExpensionURL = aiSuperExpensionMessage.string;
 
-    // Wait for a message from the server that the next round is starting
-    const gotNextRoundStarting = (nextRoundEvent) => {
-      const nextRoundMessage = parseServerBuffer(nextRoundEvent.data);
-      const nextRoundHeader = nextRoundMessage.header;
-      if (nextRoundHeader === serverHeaders.gameStarting) {
-        webSocket.removeEventListener('message', gotNextRoundStarting);
-        startRound(...[
-          code, webSocket, nextRoundMessage.round,
-          nextRoundMessage.whoScribbles, myPlayerNumber,
-        ]);
+        // Display the round's scribble and exPENsion on the "done" screen,
+        // and allow the user to download them both at once
+        els.finalScribble.src = finalScribbleURL;
+        els.finalExpension.src = finalExpensionURL;
+        els.finalAiSuperExpension.src = finalAiSuperExpensionURL;
+        els.saveDrawingsButton.onclick = () => {
+          downloadFiles([
+            {
+              url: finalScribbleURL,
+              filename: `expensiongame_${code}_round${round + 1}_1`,
+            },
+            {
+              url: finalExpensionURL,
+              filename: `expensiongame_${code}_round${round + 1}_2`,
+            },
+            {
+              url: finalAiSuperExpensionURL,
+              filename: `expensiongame_${code}_round${round + 1}_3`,
+            },
+          ]);
+        };
+        setScreen('done');
+
+        // Wait for a message from the server that the next round is starting
+        const gotNextRoundStarting = (nextRoundEvent) => {
+          const nextRoundMessage = parseServerBuffer(nextRoundEvent.data);
+          const nextRoundHeader = nextRoundMessage.header;
+          if (nextRoundHeader === serverHeaders.gameStarting) {
+            webSocket.removeEventListener('message', gotNextRoundStarting);
+            startRound(...[
+              code, webSocket, nextRoundMessage.round,
+              nextRoundMessage.whoScribbles, myPlayerNumber,
+            ]);
+          }
+        };
+        webSocket.addEventListener('message', gotNextRoundStarting);
       }
     };
-    webSocket.addEventListener('message', gotNextRoundStarting);
+    webSocket.addEventListener('message', gotAiSuperExpension);
   };
 
   // Reset the "done" screen to display the final scribble and not yet be ready for the next round
   els.finalScribble.classList.remove('finalDrawingActive');
-  els.finalExpension.classList.add('finalDrawingActive');
-  els.finalScribbleOrExpension.checked = true;
+  els.finalExpension.classList.remove('finalDrawingActive');
+  els.finalAiSuperExpension.classList.add('finalDrawingActive');
+  // els.finalScribbleOrExpension.checked = true;
+  els.showFinalAiSuperExpension.click();
   els.playAgainCheckbox.checked = false;
 
   // Keep a local record of the scribble/exPENsion data URL's
@@ -142,6 +165,7 @@ const startRound = (code, webSocket, round, playerWhoScribbles, myPlayerNumber) 
   // the scribbler)
   finalScribbleURL = undefined;
   finalExpensionURL = undefined;
+  finalAiSuperExpensionURL = undefined;
 
   // Regardless of whether I do the scribble or not, the "waiting" and "drawing" screen
   // each have their own message for when the game is in the "waiting for scribble" state
@@ -171,7 +195,7 @@ const startRound = (code, webSocket, round, playerWhoScribbles, myPlayerNumber) 
       streamingBoard.drawImageDataBuffer(drawingBoard.getImageDataBuffer());
       drawingBoard.submitDrawing();
       els.whyAmIWaiting.innerHTML = 'Waiting for the other player to make an exPENsion of your scribble...';
-      setScreen('waiting');
+      setScreen('waitingForDrawing');
       // Wait for exPENsion, and upon reception write it to the canvas and save it back as
       // a data URL
       const gotExpensionDoneResponse = (expensionDoneEvent) => {
@@ -192,7 +216,7 @@ const startRound = (code, webSocket, round, playerWhoScribbles, myPlayerNumber) 
               webSocket.removeEventListener('message', gotExpensionDoneResponse);
               streamingBoard.drawImageDataBuffer(drawingDoneMessage.imageDataBuffer);
               finalExpensionURL = streamingBoard.toDataURL();
-              seeResult();
+              waitForAi();
               break;
             default:
           }
@@ -203,7 +227,7 @@ const startRound = (code, webSocket, round, playerWhoScribbles, myPlayerNumber) 
   } else {
     // Go to waiting screen until scribble is received, upon which write it to the canvas to
     // be drawn over (not before saving it back as a data URL though)
-    setScreen('waiting');
+    setScreen('waitingForDrawing');
     const gotScribbleDoneResponse = (scribbleDoneEvent) => {
       const drawingDoneMessage = parseServerBuffer(scribbleDoneEvent.data);
       if (drawingDoneMessage.player === playerWhoScribbles) {
@@ -226,7 +250,7 @@ const startRound = (code, webSocket, round, playerWhoScribbles, myPlayerNumber) 
             els.submitDrawingButton.onclick = () => {
               finalExpensionURL = drawingBoard.toDataURL();
               drawingBoard.submitDrawing();
-              seeResult();
+              waitForAi();
             };
             els.whatAmIDrawing.innerHTML = 'It\'s exPENsion time! Turn this scribble into a coherent drawing!';
             setScreen('drawing');
@@ -245,8 +269,9 @@ const init = () => {
     'start',
     'displayCode',
     'inputCode',
-    'waiting',
+    'waitingForDrawing',
     'drawing',
+    'waitingForAi',
     'done',
     'noCanvas',
   ], (e) => `${e}Screen`);
@@ -265,12 +290,14 @@ const init = () => {
     'submitDrawingButton',
     'finalScribble',
     'finalExpension',
-    'finalScribbleOrExpension',
+    'finalAiSuperExpension',
+    'finalDrawingForm',
+    'showFinalAiSuperExpension',
     'saveDrawingsButton',
     'playAgainCheckbox',
   ]);
 
-  // setScreen('drawing'); // Uncomment this line to debug a specific screen
+  // setScreen('done'); // Uncomment this line to debug a specific screen
 
   // Don't bother starting the game if canvas is not supported (see module for further explanation)
   if (!(drawingBoard.init() && streamingBoard.init())) {
@@ -380,12 +407,21 @@ const init = () => {
     }
   };
 
-  els.finalScribbleOrExpension.onclick = (e) => {
-    // If the switch is checked, the exPENsion is to be seen and the scribble is not.
-    const showExpension = e.target.checked;
-    els.finalScribble.classList[showExpension ? 'remove' : 'add']('finalDrawingActive');
-    els.finalExpension.classList[showExpension ? 'add' : 'remove']('finalDrawingActive');
+  const finalDrawingOptionCallbackGenerator = (id) => () => {
+    els.finalScribble.classList[id === 'showFinalScribble' ? 'add' : 'remove']('finalDrawingActive');
+    els.finalExpension.classList[id === 'showFinalExpension' ? 'add' : 'remove']('finalDrawingActive');
+    els.finalAiSuperExpension.classList[id === 'showFinalAiSuperExpension' ? 'add' : 'remove']('finalDrawingActive');
   };
+
+  const finalDrawingOptions = els.finalDrawingForm.children;
+  for (let i = 0; i < finalDrawingOptions.length; i++) {
+    const currentFinalDrawingOption = finalDrawingOptions[i];
+    const currentFinalDrawingOptionCallback = finalDrawingOptionCallbackGenerator(currentFinalDrawingOption.querySelector('input').id);
+    const currentFinalDrawingOptionChildren = currentFinalDrawingOption.children;
+    for (let j = 0; j < currentFinalDrawingOptionChildren.length; j++) {
+      currentFinalDrawingOptionChildren[j].addEventListener('click', currentFinalDrawingOptionCallback);
+    }
+  }
 };
 
 window.onload = init;
