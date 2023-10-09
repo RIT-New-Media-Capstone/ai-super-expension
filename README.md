@@ -7,6 +7,7 @@ Based off the original exPENsion (https://github.com/dr-cooder/expension), this 
 - https://askjavascript.com/how-to-convert-string-to-char-code-in-javascript/
 - https://stackoverflow.com/questions/37436824/convert-string-to-buffer-node
 - https://www.pubnub.com/blog/nodejs-websocket-programming-examples/
+- https://stackoverflow.com/questions/1066452/easiest-way-to-open-a-download-window-without-navigating-away-from-the-page
 ### External Components
 - OpenAI
 - Bootstrap

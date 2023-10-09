@@ -32,12 +32,12 @@
       <button id="submitJoinCodeButton" type="button" class="btn btn-primary">Join</button>
       <p id="joinError" class="text-danger"></p>
     </div>
-    <div id="waitingScreen">
+    <div id="waitingForDrawingScreen">
       <p id="whyAmIWaiting"></p>
       <div id="streamingBoardOuter">
-        <div class="ratio4x3">
+        <div class="ratioSquare">
           <div class="ratioContainer">
-            <canvas width="640" height="480" id="streamingBoard"></canvas>
+            <canvas width="512" height="512" id="streamingBoard"></canvas>
           </div>
         </div>
       </div>
@@ -45,38 +45,58 @@
     <div id="drawingScreen">
       <p id="whatAmIDrawing"></p>
       <div id="drawingBoardOuter">
-        <div class="ratio4x3">
+        <div class="ratioSquare">
           <div class="ratioContainer">
-            <canvas width="640" height="480" id="drawingBoard"></canvas>
+            <canvas width="512" height="512" id="drawingBoard"></canvas>
           </div>
         </div>
       </div>
       <button id="submitDrawingButton" type="button" class="btn btn-primary">Submit</button>
     </div>
+    <div id="waitingForAiScreen">
+      <p>That's it for human input!</p>
+      <p>Drumroll for the AI Super exPENsion, please...</p>
+    </div>
     <div id="doneScreen">
-      <p>BEHOLD! Your beautiful exPENsion!</p>
+      <p>BEHOLD! Your beautiful AI Super exPENsion!</p>
       <div id="finalDrawingOuter">
-        <div class="ratio4x3">
+        <div class="ratioSquare">
           <div class="ratioContainer">
-            <img id="finalScribble" src="" alt="An abstract scribble">
-            <img id="finalExpension" class="finalDrawingActive" src="" alt="A coherent drawing made as an exPENsion of an abstract scribble">
+            <img id="finalScribble" class="finalDrawing" src="" alt="An abstract scribble">
+            <img id="finalExpension" class="finalDrawing finalDrawingActive" src="" alt="A coherent drawing made as an exPENsion of an abstract scribble">
+            <img id="finalAiSuperExpension" class="finalDrawing" src="" alt="An AI-generated variation of a coherent drawing made as an exPENsion of an abstract scribble">
           </div>
         </div>
       </div>
-      <!-- https://getbootstrap.com/docs/5.0/forms/checks-radios/ -->
-      <div id="finalScribbleOrExpensionForm" class="form-check form-switch">
-        <label class="form-check-label" for="finalScribbleOrExpension">Show scribble</label>
-        <input class="form-check-input" type="checkbox" id="finalScribbleOrExpension" checked>
-        <label class="form-check-label" for="finalScribbleOrExpension">Show exPENsion</label>
-      </div>
-      <button id="saveDrawingsButton" type="button" class="btn btn-primary">Save drawings</button>
-      <p class="smallItalics">(Your browser may ask for permission the first time)</p>
       <div id="playAgainCheckboxForm" class="form-check">
         <input class="form-check-input" type="checkbox" value="" id="playAgainCheckbox">
         <label class="form-check-label" for="playAgainCheckbox">
           Ready to play again?
         </label>
       </div>
+      <!-- https://getbootstrap.com/docs/5.0/forms/checks-radios/ -->
+      <div id="finalDrawingForm">
+        <div class="form-check">
+          <input class="form-check-input" type="radio" name="flexRadioDefault" id="showFinalScribble" checked>
+          <label class="form-check-label" for="showFinalScribble">
+            Show scribble
+          </label>
+        </div>
+        <div class="form-check">
+          <input class="form-check-input" type="radio" name="flexRadioDefault" id="showFinalExpension">
+          <label class="form-check-label" for="showFinalExpension">
+            Show exPENsion
+          </label>
+        </div>
+        <div class="form-check">
+          <input class="form-check-input" type="radio" name="flexRadioDefault" id="showFinalAiSuperExpension">
+          <label class="form-check-label" for="showFinalAiSuperExpension">
+            Show AI Super exPENsion
+          </label>
+        </div>
+      </div>
+      <button id="saveDrawingsButton" type="button" class="btn btn-primary">Save drawings</button>
+      <p class="smallItalics">(Your browser may ask for permission the first time)</p>
     </div>
     <div id="noCanvasScreen">
       <p>Your browser doesn't support Canvas! Please get a newer browser and start a new game.</p>

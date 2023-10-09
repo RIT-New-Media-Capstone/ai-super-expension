@@ -1,13 +1,20 @@
 const { WebSocketServer } = require('ws');
+const Jimp = require('jimp');
 const gameCode = require('../common/gameCode.js');
 const { clientHeaders, serverHeaders } = require('../common/headers.js');
 const { gameStates } = require('../common/gameStates.js');
 const { otherOfTwoPlayers } = require('../common/commonMisc.js');
+const { boardWidth, boardHeight } = require('../common/boardCommon.js');
 const imageGen = require('./imageGen.js');
-const Jimp = require('jimp')
 
 const games = {};
 const playerInfos = {};
+
+const forEachPlayerInfo = (gamePlayerIds, callback) => {
+  for (let i = 0; i < gamePlayerIds.length; i++) {
+    callback(playerInfos[gamePlayerIds[i]]);
+  }
+};
 
 // TODO: Sanitize input (What if a buffer has length <= 1? What if a provided game code is invalid?)
 // Parse header, and relevant data according to header, from buffer from client
@@ -87,11 +94,11 @@ const joinGame = (playerId, code) => {
         game.state = gameStates.waitingForScribble;
 
         // Send both players the "game is starting" message
-        for (let i = 0; i < gamePlayerIds.length; i++) {
-          playerInfos[gamePlayerIds[i]].socket.send(
+        forEachPlayerInfo(gamePlayerIds, (startingPlayerInfo) => {
+          startingPlayerInfo.socket.send(
             Buffer.from([serverHeaders.gameStarting, game.round, playerWhoScribbles]),
           );
-        }
+        });
       }
     }
   }
@@ -117,7 +124,8 @@ const submitDrawing = async (playerId, buffer) => {
     const { playerWhoScribbles } = game;
     const playerWhoMakesExpension = otherOfTwoPlayers(playerWhoScribbles);
     const shouldBeScribble = game.playerWhoScribbles === game.playerIds.indexOf(playerId);
-    if (game.state === (shouldBeScribble ? gameStates.waitingForScribble : gameStates.waitingForExpension)) {
+    if (game.state
+      === (shouldBeScribble ? gameStates.waitingForScribble : gameStates.waitingForExpension)) {
       // Resend the drawing to the other player and update the game state
       if (shouldBeScribble) {
         playerInfos[game.playerIds[playerWhoMakesExpension]].socket.send(
@@ -128,47 +136,53 @@ const submitDrawing = async (playerId, buffer) => {
         playerInfos[game.playerIds[playerWhoScribbles]].socket.send(
           Buffer.from([serverHeaders.drawingDone, playerWhoMakesExpension, ...buffer]),
         );
-        // game.state = gameStates.waitingForNextRound;
-
         game.state = gameStates.waitingForAiImageVariation;
-
-        // turn this from raw rgba data into a png
-        // buffer
-
-        console.log('creating png', buffer);
-        const originalImage = await new Jimp({ data: buffer, width: 640, height: 480 }, (err, image) => {
-          if (err) {
-            console.log(err);
-            throw err;
-          }
-
-          // image.resize(256, 256).write('expension.png');
-        });
-
-        const imageBuffer = await originalImage.resize(256, 256).getBufferAsync(Jimp.MIME_PNG);
-        imageBuffer.name = "expension.png";
-
-        // const b64_json = {
-        //   data: [
-        //     {
-        //       b64_json: b64_image.split(',')[1],
-        //     }
-        //   ]
-        // };
-        // console.log(b64_json);
-        // const result = await imageGen.testImageGen();
-
-        console.log('created buffer', imageBuffer);
-
-        // send png to ai for variation
-        const newImage = await imageGen.getImageVariation(imageBuffer);
-        console.log(newImage.data[0].url);
-
-        // send back to both players in the form of a url
-        playerInfos[game.playerIds[playerWhoScribbles]].socket.send(newImage.data[0].url);
-
-        // set game state to 4
-        game.state = gameStates.waitingForNextRound;
+        const originalImage = new Jimp(
+          {
+            data: buffer,
+            width: boardWidth,
+            height: boardHeight,
+          },
+          (err) => {
+            if (err) {
+              console.log(err);
+              const errorMessage = stringBufferWithHeader(...[
+                serverHeaders.errorMsg,
+                err.toString(),
+              ]);
+              forEachPlayerInfo(game.playerIds, (aiReceiverPlayerInfo) => {
+                aiReceiverPlayerInfo.socket.send(errorMessage);
+              });
+              throw err;
+            }
+          },
+        );
+        const resizedOriginalPngBuffer = await originalImage
+          .resize(256, 256).getBufferAsync(Jimp.MIME_PNG);
+        resizedOriginalPngBuffer.name = 'expension.png';
+        try {
+          const newImage = await imageGen.getImageVariation(resizedOriginalPngBuffer);
+          console.log(newImage.data[0].url);
+          // send back to both players in the form of a url
+          const newImageMessage = stringBufferWithHeader(...[
+            serverHeaders.aiGenerationDone,
+            newImage.data[0].url,
+          ]);
+          forEachPlayerInfo(game.playerIds, (aiReceiverPlayerInfo) => {
+            aiReceiverPlayerInfo.socket.send(newImageMessage);
+          });
+          // set game state to 4
+          game.state = gameStates.waitingForNextRound;
+        } catch (err) {
+          console.log(err);
+          const errorMessage = stringBufferWithHeader(...[
+            serverHeaders.errorMsg,
+            err.toString(),
+          ]);
+          forEachPlayerInfo(game.playerIds, (aiReceiverPlayerInfo) => {
+            aiReceiverPlayerInfo.socket.send(errorMessage);
+          });
+        }
       }
     }
   }
@@ -185,11 +199,11 @@ const updateReady = (playerId, value) => {
 
       // See if all players in the game are ready for the next round...
       let allPlayersReady = true;
-      for (let i = 0; i < gamePlayerIds.length; i++) {
-        if (playerInfos[gamePlayerIds[i]].readyForNextRound === false) {
+      forEachPlayerInfo(gamePlayerIds, (readyPlayerInfo) => {
+        if (readyPlayerInfo.readyForNextRound === false) {
           allPlayersReady = false;
         }
-      }
+      });
 
       // ...and if so, move to the next round and let them know of it.
       if (allPlayersReady) {
@@ -197,6 +211,7 @@ const updateReady = (playerId, value) => {
         game.playerWhoScribbles = playerWhoScribbles;
         game.round++;
         game.state = gameStates.waitingForScribble;
+        // Can't reassign parameter values, can't DRY here
         for (let i = 0; i < gamePlayerIds.length; i++) {
           const currentPlayerInfo = playerInfos[gamePlayerIds[i]];
           currentPlayerInfo.readyForNextRound = false;
@@ -216,9 +231,9 @@ const playerDropped = (playerId) => {
     const game = games[code];
     if (game !== undefined) {
       const gamePlayerIds = game.playerIds;
-      for (let i = 0; i < gamePlayerIds.length; i++) {
-        playerInfos[gamePlayerIds[i]].socket.close();
-      }
+      forEachPlayerInfo(gamePlayerIds, (droppingPlayerId) => {
+        droppingPlayerId.socket.close();
+      });
       games[code] = undefined;
     }
   }
