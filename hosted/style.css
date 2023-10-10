@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Pixelify+Sans&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Anton&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=Indie+Flower&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=Sacramento&display=swap');
 
@@ -11,7 +13,8 @@ html {
 }
 
 body {
-  background: linear-gradient(to bottom right, Aquamarine, MediumSeaGreen) fixed;;
+  color: white;
+  background: linear-gradient(to bottom right, CornflowerBlue, Brown) fixed;
 }
 
 #logo {
@@ -22,6 +25,17 @@ body {
 
 #logoPen {
   font-family: 'Sacramento', cursive, sans-serif;
+  font-weight: bold;
+}
+
+#logoAi {
+  font-family: 'Pixelify Sans', sans-serif;
+  font-weight: bold;
+  font-size: 125%;
+}
+
+#logoSuper {
+  font-family: 'Anton', sans-serif;
   font-weight: bold;
 }
 
@@ -37,6 +51,18 @@ body {
 
 #screens > div.activeScreen {
   display: block;
+}
+
+#aiDisclaimer {
+  margin-top: 1rem;
+}
+
+a {
+  color: LimeGreen;
+}
+
+a:hover {
+  color: Lime;
 }
 
 #codeInput {
