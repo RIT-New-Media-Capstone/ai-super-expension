@@ -4,21 +4,22 @@
   <meta charset="UTF-8">
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>exPENsion</title>
+  <title>AI Super exPENsion</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-Zenh87qX5JnK2Jl0vWa8Ck2rdkQ2Bzep5IDxbcnCeuOxjzrPF/et3URy9Bv1WTRi" crossorigin="anonymous">
   <link rel="stylesheet" type="text/css" href="/style.css">
   <script src="/bundle.js"></script>
 </head>
 <body>
   <h1 id="logo">
-    ex<span id="logoPen">PEN</span>sion
+    <span id="logoAi">AI</span> <span id="logoSuper">Super</span> ex<span id="logoPen">PEN</span>sion
   </h1>
   <div id="screens">
     <div id="startScreen" class="activeScreen">
-      <p>One player starts with a scribble, and the other makes a drawing out of it!</p>
+      <p>One player starts with a scribble, the other makes a drawing out of it, and an AI makes its own variation!</p>
       <button id="newGameButton" type="button" class="btn btn-primary">Start new game</button>
       <button id="joinGameButton" type="button" class="btn btn-primary">Join game via code</button>
-      <p id="newGameError" class="text-danger"></p>
+      <p id="aiDisclaimer">DISCLAIMER: This game uses the <a target="_blank" href="https://platform.openai.com/docs/guides/images/image-generation">OpenAI Image API</a></p>
+      <p id="newGameError" class="text-warning"></p>
     </div>
     <div id="displayCodeScreen">
       <p>Tell the other player to join with the code:</p>
@@ -30,7 +31,7 @@
       <!-- https://developer.mozilla.org/en-US/docs/Web/Security/Securing_your_site/Turning_off_form_autocompletion -->
       <input type="text" maxlength="3" id="codeInput" autocomplete="off">
       <button id="submitJoinCodeButton" type="button" class="btn btn-primary">Join</button>
-      <p id="joinError" class="text-danger"></p>
+      <p id="joinError" class="text-warning"></p>
     </div>
     <div id="waitingForDrawingScreen">
       <p id="whyAmIWaiting"></p>
