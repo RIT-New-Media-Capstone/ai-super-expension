@@ -6,7 +6,8 @@ const { otherOfTwoPlayers } = require('../common/commonMisc.js');
 
 // TODO: Interpret server errors better
 
-const webSocketURL = `ws://${window.location.hostname}:3000`;
+// TODO: 10000 is a magic number, actual server port should be sent to client properly
+const webSocketURL = `ws://${window.location.hostname}:10000`;
 let screens = {};
 let els = {};
 let finalScribbleURL;
