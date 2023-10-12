@@ -9,6 +9,7 @@ const urlStruct = {
   '/': htmlHandler.getIndex,
   '/style.css': htmlHandler.getCSS,
   '/bundle.js': htmlHandler.getJS,
+  '/port': htmlHandler.getPort(port),
   notFound: htmlHandler.getIndex,
 };
 

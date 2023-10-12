@@ -6,8 +6,18 @@ const { otherOfTwoPlayers } = require('../common/commonMisc.js');
 
 // TODO: Interpret server errors better
 
-// TODO: 10000 is a magic number, actual server port should be sent to client properly
-const webSocketURL = `ws://${window.location.hostname}:10000`;
+// TODO: this fix should be better
+const getWebSocketURL = async () => {
+  let returnValue;
+  try {
+    const response = await fetch(`https://${window.location.hostname}/port`);
+    const port = await response.text();
+    returnValue = `ws://${window.location.hostname}:${port}`;
+  } catch (e) {
+    returnValue = `ws://${window.location.hostname}:3000`;
+  }
+  return returnValue;
+};
 let screens = {};
 let els = {};
 let finalScribbleURL;
@@ -84,6 +94,7 @@ const setScreen = (name) => {
 // Have the client download a list of files of given URLs and filenames to download them as
 // https://github.com/robertdiers/js-multi-file-download/blob/master/src/main/resources/static/multidownload.js
 // https://stackoverflow.com/questions/1066452/easiest-way-to-open-a-download-window-without-navigating-away-from-the-page
+// TODO: Download external URL properly instead of opening a new tab (CORS?)
 const downloadFiles = (files) => {
   const downloadNext = (i) => {
     if (i >= files.length) return;
@@ -318,12 +329,12 @@ const init = () => {
     els.newGameError.innerHTML = 'Connection lost.';
   };
 
-  const requestNewGame = () => {
+  const requestNewGame = async () => {
     // Avoid asking for more than one new game code at once
     els.newGameError.innerHTML = '';
     setJoinControlsDisabled(true);
 
-    const webSocket = new WebSocket(webSocketURL);
+    const webSocket = new WebSocket(await getWebSocketURL());
     webSocket.binaryType = 'arraybuffer';
     webSocket.addEventListener('open', () => {
       webSocket.send(new Uint8Array([clientHeaders.newGame]).buffer);
@@ -360,7 +371,7 @@ const init = () => {
 
   els.joinGameButton.onclick = () => setScreen('inputCode');
 
-  const submitJoinCode = () => {
+  const submitJoinCode = async () => {
     els.joinError.innerHTML = '';
     // Avoid trying to join more than one game at once (or the same one more than once)
     setJoinControlsDisabled(true);
@@ -373,7 +384,7 @@ const init = () => {
       setJoinControlsDisabled(false);
       els.joinError.innerHTML = codeError.message;
     } else {
-      const webSocket = new WebSocket(webSocketURL);
+      const webSocket = new WebSocket(await getWebSocketURL());
       webSocket.binaryType = 'arraybuffer';
       webSocket.addEventListener('open', () => {
         webSocket.send(stringBufferWithHeader(clientHeaders.joinGame, code));

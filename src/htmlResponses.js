@@ -16,8 +16,11 @@ const getCSS = (request, response) => respond(request, response, css, 'text/css'
 
 const getJS = (request, response) => respond(request, response, js, 'application/javascript');
 
+const getPort = (port) => (request, response) => respond(request, response, Buffer.from(port.toString()), 'text/plain');
+
 module.exports = {
   getIndex,
   getCSS,
   getJS,
+  getPort,
 };
