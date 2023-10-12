@@ -240,7 +240,7 @@ const playerDropped = (playerId) => {
 };
 
 const startGameWebSockets = () => {
-  const socketServer = new WebSocketServer({ });
+  const socketServer = new WebSocketServer({ port: 443 });
   socketServer.on('connection', (socket) => {
     const playerId = Date.now();
     playerInfos[playerId] = { socket };

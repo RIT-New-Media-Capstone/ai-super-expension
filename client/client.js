@@ -6,7 +6,7 @@ const { otherOfTwoPlayers } = require('../common/commonMisc.js');
 
 // TODO: Interpret server errors better
 
-const webSocketURL = `ws://${window.location.hostname}`;
+const webSocketURL = `ws://${window.location.hostname}:443`;
 let screens = {};
 let els = {};
 let finalScribbleURL;
