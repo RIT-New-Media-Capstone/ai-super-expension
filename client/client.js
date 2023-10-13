@@ -4,20 +4,10 @@ const streamingBoard = require('./streamingBoard.js');
 const { clientHeaders, serverHeaders } = require('../common/headers.js');
 const { otherOfTwoPlayers } = require('../common/commonMisc.js');
 
-// TODO: Interpret server errors better
+// TODO: Interpret server errors better (stop game?)
 
-// TODO: this fix should be better
-const getWebSocketURL = async () => {
-  let returnValue;
-  try {
-    const response = await fetch(`https://${window.location.hostname}/port`);
-    const port = await response.text();
-    returnValue = `ws://${window.location.hostname}:${port}`;
-  } catch (e) {
-    returnValue = `ws://${window.location.hostname}:3000`;
-  }
-  return returnValue;
-};
+// https://stackoverflow.com/questions/19754922/why-wont-my-app-establish-websocket-connection-on-heroku
+const webSocketUrl = window.origin.replace(/^http/, 'ws');
 let screens = {};
 let els = {};
 let finalScribbleURL;
@@ -334,7 +324,7 @@ const init = () => {
     els.newGameError.innerHTML = '';
     setJoinControlsDisabled(true);
 
-    const webSocket = new WebSocket(await getWebSocketURL());
+    const webSocket = new WebSocket(webSocketUrl);
     webSocket.binaryType = 'arraybuffer';
     webSocket.addEventListener('open', () => {
       webSocket.send(new Uint8Array([clientHeaders.newGame]).buffer);
@@ -384,7 +374,7 @@ const init = () => {
       setJoinControlsDisabled(false);
       els.joinError.innerHTML = codeError.message;
     } else {
-      const webSocket = new WebSocket(await getWebSocketURL());
+      const webSocket = new WebSocket(webSocketUrl);
       webSocket.binaryType = 'arraybuffer';
       webSocket.addEventListener('open', () => {
         webSocket.send(stringBufferWithHeader(clientHeaders.joinGame, code));

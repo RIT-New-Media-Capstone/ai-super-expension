@@ -8,6 +8,7 @@ Based off the original exPENsion (https://github.com/dr-cooder/expension), this 
 - https://stackoverflow.com/questions/37436824/convert-string-to-buffer-node
 - https://www.pubnub.com/blog/nodejs-websocket-programming-examples/
 - https://stackoverflow.com/questions/1066452/easiest-way-to-open-a-download-window-without-navigating-away-from-the-page
+- https://stackoverflow.com/questions/19754922/why-wont-my-app-establish-websocket-connection-on-heroku
 ### External Components
 - OpenAI
 - Bootstrap
